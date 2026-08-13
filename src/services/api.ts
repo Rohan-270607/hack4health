@@ -1,78 +1,174 @@
-/**
- * Centralized MindPulse API Client Configuration
- * Allows seamless switching between Mock API Service Layer and Production REST API Endpoints.
- */
+import { API_BASE_URL } from '../config';
 
-export interface ApiConfig {
-  useMockApi: boolean;
-  baseUrl: string;
-  timeoutMs: number;
+export interface AnalysisResponse {
+  success?: boolean;
+  emotion?: string;
+  confidence?: number;
+  probabilities?: Record<string, number>;
+  error?: string;
+  message?: string;
+  [key: string]: any;
 }
 
-export const defaultApiConfig: ApiConfig = {
-  useMockApi: true,
-  baseUrl: '/api',
-  timeoutMs: 12000
-};
-
-let currentConfig = { ...defaultApiConfig };
-
-export const getApiConfig = (): ApiConfig => currentConfig;
-
-export const setUseMockApi = (useMock: boolean) => {
-  currentConfig.useMockApi = useMock;
-};
-
-export const setBaseUrl = (url: string) => {
-  currentConfig.baseUrl = url;
-};
-
 /**
- * Configurable Face Analysis Backend URL.
- * Change this single variable to point to a deployed backend.
+ * Analyze a facial image using the Flask backend.
+ * Backend endpoint:
+ * POST /api/analyze/face
+ *
+ * Field name:
+ * image
  */
-let FACE_API_BASE_URL = 'http://localhost:5000';
+export async function analyzeFacial(
+  imageFile: File | Blob
+): Promise<AnalysisResponse> {
+  const formData = new FormData();
 
-export const getFaceApiBaseUrl = (): string => FACE_API_BASE_URL;
-
-export const setFaceApiBaseUrl = (url: string) => {
-  FACE_API_BASE_URL = url;
-};
-
-/**
- * Standard simulated network delay helper for mock calls
- */
-export const delay = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Generic API request wrapper that dispatches to real HTTP fetch or mock handlers
- */
-export async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {},
-  mockFallback: () => Promise<T>
-): Promise<T> {
-  if (currentConfig.useMockApi) {
-    return mockFallback();
+  if (imageFile instanceof File) {
+    formData.append('image', imageFile);
+  } else {
+    formData.append('image', imageFile, 'capture.jpg');
   }
 
-  try {
-    const response = await fetch(`${currentConfig.baseUrl}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-      },
-      ...options
-    });
+  console.log('[MindPulse Face] Sending image:', {
+    name: imageFile instanceof File ? imageFile.name : 'capture.jpg',
+    type: imageFile.type,
+    size: imageFile.size,
+  });
 
-    if (!response.ok) {
-      throw new Error(`API Request failed with status ${response.status}: ${response.statusText}`);
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/analyze/face`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+
+    const text = await response.text();
+
+    let data: AnalysisResponse;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(
+        text || `Facial analysis failed with status ${response.status}`
+      );
     }
 
-    return (await response.json()) as T;
-  } catch (error) {
-    console.warn(`[MindPulse API] Endpoint ${endpoint} failed or unreachable. Falling back to mock handler.`, error);
-    return mockFallback();
+    console.log('[MindPulse Face] Backend response:', data);
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+          data.message ||
+          `Facial analysis failed with status ${response.status}`
+      );
+    }
+
+    return data;
+  } catch (error: any) {
+    console.error('[MindPulse Face] Request failed:', error);
+
+    if (error instanceof TypeError) {
+      throw new Error(
+        'Could not connect to the MindPulse backend. Make sure Flask is running on port 5000.'
+      );
+    }
+
+    throw error;
+  }
+}
+
+
+/**
+ * Analyze an audio file using the Flask backend.
+ * Backend endpoint:
+ * POST /api/analyze/audio
+ *
+ * Field name:
+ * audio
+ */
+export async function analyzeAudio(
+  audioBlob: Blob | File
+): Promise<AnalysisResponse> {
+  const formData = new FormData();
+
+  if (audioBlob instanceof File) {
+    formData.append('audio', audioBlob);
+  } else {
+    formData.append('audio', audioBlob, 'recording.wav');
+  }
+
+  console.log('[MindPulse Audio] Sending audio:', {
+    name: audioBlob instanceof File ? audioBlob.name : 'recording.wav',
+    type: audioBlob.type,
+    size: audioBlob.size,
+  });
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/analyze/audio`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+
+    const text = await response.text();
+
+    let data: AnalysisResponse;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(
+        text || `Audio analysis failed with status ${response.status}`
+      );
+    }
+
+    console.log('[MindPulse Audio] Backend response:', data);
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+          data.message ||
+          `Audio analysis failed with status ${response.status}`
+      );
+    }
+
+    return data;
+  } catch (error: any) {
+    console.error('[MindPulse Audio] Request failed:', error);
+
+    if (error instanceof TypeError) {
+      throw new Error(
+        'Could not connect to the MindPulse backend. Make sure Flask is running on port 5000.'
+      );
+    }
+
+    throw error;
+  }
+}
+
+
+/**
+ * Check whether the Flask backend is online.
+ *
+ * Backend endpoint:
+ * GET /api/health
+ */
+export async function checkBackendStatus(): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/health`,
+      {
+        method: 'GET',
+      }
+    );
+
+    return response.ok;
+  } catch {
+    return false;
   }
 }
